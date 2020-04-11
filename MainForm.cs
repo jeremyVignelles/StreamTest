@@ -23,7 +23,7 @@ namespace StreamTest
                                                  "--verbose=2",
                                                  "--no-osd" };
         private static LibVLC libVLC;
-        private MyMediaInput mMediaInput = new MyMediaInput();
+        private LivePipeMediaInput mMediaInput = new LivePipeMediaInput();
         private Media mMedia;
         private Thread mp4StreamerThread;
 
@@ -52,7 +52,7 @@ namespace StreamTest
         {
             log("btnPlayMedia_Click");
 
-            mMediaInput = new MyMediaInput();
+            mMediaInput = new LivePipeMediaInput();
 
             MP4Streamer mp4Streamer = new MP4Streamer(mMediaInput);
             mp4StreamerThread = new Thread(mp4Streamer.DoWork);
@@ -60,8 +60,8 @@ namespace StreamTest
 
             mMedia = new Media(libVLC, mMediaInput);
             MediaConfiguration mediaConfiguration = new MediaConfiguration();
-            mediaConfiguration.EnableHardwareDecoding = true;
-            mediaConfiguration.NetworkCaching = 150;
+            //mediaConfiguration.EnableHardwareDecoding = true;
+            //mediaConfiguration.NetworkCaching = 150;
             mMedia.AddOption(mediaConfiguration);
             /*mMedia.AddOption(":clock-jitter=0");
             mMedia.AddOption(":clock-synchro=0");*/
@@ -82,14 +82,14 @@ namespace StreamTest
             private static int bufferSize = 4096;
             private byte[] buffer = new byte[bufferSize];
             private int box = 0;
-            private MyMediaInput mediaInput;
+            private LivePipeMediaInput mediaInput;
 
             private static void log(String message)
             {
                 Console.WriteLine(DateTime.Now.ToString("HH:mm:ss.ffffff") + " - MP4Streamer: " + message);
             }
 
-            public MP4Streamer(MyMediaInput m)
+            public MP4Streamer(LivePipeMediaInput m)
             {
                 mediaInput = m;
             }
@@ -103,6 +103,8 @@ namespace StreamTest
                 int bytesToRead = 0;
                 log("Opening file. Size=" + numBytesToRead);
 
+                var writer = this.mediaInput.Writer;
+
                 try
                 {
                     while (0 < numBytesToRead)
@@ -111,26 +113,37 @@ namespace StreamTest
                         else if (1 == box) bytesToRead = 726;
                         else bytesToRead = 4096;
 
+
                         int read = mp4file.Read(buffer, 0, bytesToRead);
+
+                        log($"read {read} bytes.");
+
 
                         // Break when the end of the file is reached.
                         if (0 == read)
+                        {
                             break;
+                        }
 
-                        mediaInput.Write(buffer, 0, read);
+                        var memory = writer.GetMemory(read);
+                        buffer.AsSpan(0, read).CopyTo(memory.Span);
+
+                        writer.Advance(read);
+                        writer.FlushAsync().AsTask().GetAwaiter().GetResult();
 
                         box++;
                         numBytesToRead -= read;
 
-                        Thread.Sleep(400);
+                        Thread.Sleep(40);
                     }
+                    writer.Complete();
                 }
                 catch (ThreadAbortException) {
                 };
             }
         }
 
-        public class MyMediaInput : MediaInput
+        /*public class MyMediaInput : MediaInput
         {
             private readonly object mWriteLock = new object();
             private readonly object mReadLock = new object();
@@ -236,6 +249,6 @@ namespace StreamTest
                     mSegmentsAvailable?.Release(1);
                 }
             }
-        }
+        }*/
     }
 }
